@@ -4,21 +4,35 @@ ARCH=$(uname -m)
 ARM64=OFF
 CMAKE_TOOLCHAIN_FILE=../../../makefiles/cmake/toolchains/arm-linux-gnueabihf.cmake
 
-if [ "$1" = "--debug" ]; then
-	BUILDTYPE=Debug
-	shift
-fi
+while [ "$1" != "" ]; do
+    case $1 in
+        --debug)
+	        BUILDTYPE=Debug
+            EXTRA_OPTS='-DCMAKE_VERBOSE_MAKEFILE=ON '
+        ;;
+        --aarch64)
+	        ARM64=ON
+	        CMAKE_TOOLCHAIN_FILE=../../../makefiles/cmake/toolchains/aarch64-linux-gnu.cmake
+        ;;
+	
+        --native)
+            LOCAL=ON
+        ;;
 
-if [ "$1" = "--aarch64" ]; then
-	ARM64=ON
-	CMAKE_TOOLCHAIN_FILE=../../../makefiles/cmake/toolchains/aarch64-linux-gnu.cmake
-	shift
-fi
+        *)
+            OUT_DIR=$1
+        ;;
+    esac
+    shift
+done
+
 
 BUILDSUBDIR=`echo $BUILDTYPE | tr '[A-Z]' '[a-z]'`;
 
 if [ $ARCH = "armv6l" ] || [ $ARCH = "armv7l" ] || [ $ARCH = "aarch64" ]; then
+    GREEN "native build under $ARCH"
 	# Native compile on the Raspberry Pi
+	rm -rf  build/raspberry/$BUILDSUBDIR
 	mkdir -p build/raspberry/$BUILDSUBDIR
 	pushd build/raspberry/$BUILDSUBDIR
 	cmake -DCMAKE_BUILD_TYPE=$BUILDTYPE -DARM64=$ARM64 ../../..
@@ -27,13 +41,18 @@ if [ $ARCH = "armv6l" ] || [ $ARCH = "armv7l" ] || [ $ARCH = "aarch64" ]; then
 	else
 		make -j4
 	fi
-	if [ "$1" != "" ]; then
-		sudo make install DESTDIR=$1
+	if [ "$OUT_DIR" != "" ]; then
+        GREEN "install into $OUT_DIR"
+		sudo make install DESTDIR=$OUT_DIR
 	else
+        GREEN "install into classic home/local"
 		sudo make install
 	fi
-elif [ "$1" = "--native" ]; then
+
+elif [ "$LOCAL" = "--native" ]; then
+
 	# Build natively on the host
+	rm -rf build/native/$BUILDSUBDIR
 	mkdir -p build/native/$BUILDSUBDIR
 	pushd build/native/$BUILDSUBDIR
 	cmake -DCMAKE_BUILD_TYPE=$BUILDTYPE ../../..
@@ -41,13 +60,16 @@ elif [ "$1" = "--native" ]; then
 	make -j `nproc` $*
 else
 	# Cross compile on a more capable machine
-	mkdir -p build/arm-linux/$BUILDSUBDIR
-	pushd build/arm-linux/$BUILDSUBDIR
-	cmake -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE -DCMAKE_BUILD_TYPE=$BUILDTYPE -DARM64=$ARM64 ../../..
+	rm -rf build/x-$ARCH/$BUILDSUBDIR
+	mkdir -p build/x-$ARCH/$BUILDSUBDIR
+	pushd build/x-$ARCH/$BUILDSUBDIR
+	cmake $EXTRA_OPTS -DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE -DCMAKE_BUILD_TYPE=$BUILDTYPE -DARM64=$ARM64 ../../..
 	make -j `nproc`
 
-	if [ "$1" != "" ]; then
-		sudo make install DESTDIR=$1
+	if [ "$OUT_DIR" != "" ]; then
+		sudo make install DESTDIR=$OUT_DIR
+    else
+        YELLOW "no install, cross compile cannot go to home/local"
 	fi
 fi
 popd
